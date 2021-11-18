@@ -1,0 +1,2 @@
+stopwatch.c:14:13:stopwatch_delay_us	24	static
+stopwatch.c:20:13:stopwatch_delay	24	static

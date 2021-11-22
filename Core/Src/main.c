@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "utils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +42,8 @@
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim1;
 
+UART_HandleTypeDef huart1;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -50,136 +52,19 @@ TIM_HandleTypeDef htim1;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define DIRECTIVE_GPIO GPIOD
 
-#define CS_PIN GPIO_PIN_2
-#define CS_GPIO GPIOD
-#define WR_PIN GPIO_PIN_0
-#define WR_GPIO GPIOD
-#define RD_PIN GPIO_PIN_1
-#define RD_GPIO GPIOD
-#define AO_PIN GPIO_PIN_3
-#define AO_GPIO GPIOD
 
-#define SET_CS CS_PIN
-#define RESET_CS (CS_PIN << 16)
-#define SET_WR WR_PIN
-#define RESET_WR (WR_PIN << 16)
-#define SET_RD RD_PIN
-#define RESET_RD (RD_PIN << 16)
-#define SET_AO AO_PIN
-#define RESET_AO (AO_PIN << 16)
-
-#define DATA_GPIO GPIOC
-#define DATA_PIN_OFFSET 0
-
-#define CMD_RESET 0x05
-#define CMD_CHECK_EXIST 0x06
-#define CMD_SET_MODE 0x15
-#define CMD_TEST_CONNECT 0x16
-
-static inline void SetUsbOutput() {
-//	uint32_t tmp = DATA_GPIO->MODER;
-//	tmp &= 0xFFFFF555;
-	DATA_GPIO->MODER = DATA_GPIO->MODER & 0xFFFFF555;
-//	DATA_GPIO->OTYPER &= 0xFFFFF000;
-}
-
-static inline void SetUsbInput() {
-	DATA_GPIO->MODER &= 0xFFFFF000;
-//	DATA_GPIO->OTYPER &= 0xFFFFF000;
-}
-
-void delay_us(uint16_t us) {
-	__HAL_TIM_SET_COUNTER(&htim1, 0);  // set the counter value a 0
-	while (__HAL_TIM_GET_COUNTER(&htim1) < us) {
-	}  // wait for the counter to reach the us input in the parameter
-}
-
-void WriteUSBCommandAndData(int command_code, uint8_t *pData, uint16_t dataSize) {
-	SetUsbOutput();
-	DIRECTIVE_GPIO->BSRR |= SET_AO;
-	DIRECTIVE_GPIO->BSRR |= RESET_CS | RESET_WR;
-
-	DATA_GPIO->BSRR = command_code | (~command_code) << 16;
-	asm("NOP");
-	DIRECTIVE_GPIO->BSRR |= SET_CS | SET_WR;
-	DIRECTIVE_GPIO->BSRR |= RESET_AO;
-	if (dataSize <= 0) {
-		return;
-	}
-	delay_us(2);
-	uint16_t n = 0;
-	while (n < dataSize) {
-		DIRECTIVE_GPIO->BSRR |= RESET_CS | RESET_WR;
-		DATA_GPIO->BSRR = (pData[0] << DATA_PIN_OFFSET)
-				| ((~pData[0]) & 0xff) << (16 + DATA_PIN_OFFSET);
-		delay_us(1);
-		DIRECTIVE_GPIO->BSRR |= SET_CS | SET_WR;
-		n += 1;
-	}
-}
-
-inline void WriteUSBCommand(int command_code) {
-	WriteUSBCommandAndData(command_code, NULL, 0);
-}
-
-void ReadUSBCommand(uint8_t *pData, uint16_t dataSize) {
-	SetUsbInput();
-	uint16_t n = 0;
-	while (n < dataSize) {
-		DIRECTIVE_GPIO->BSRR |= RESET_AO;
-		asm("NOP");
-		DIRECTIVE_GPIO->BSRR |= RESET_CS | RESET_RD;
-		asm("NOP");
-		asm("NOP");
-		asm("NOP");
-		asm("NOP");
-		asm("NOP");
-		*(pData + n) = (DATA_GPIO->IDR >> DATA_PIN_OFFSET) & 0xFF;
-		delay_us(1);
-		n += 1;
-	}
-
-}
-
-//void WriteToUSBController(int command, uint8_t *pData, uint16_t dataSize) {
-//	uint32_t tmp;
-//	SetUsbOutput();
-//
-//	tmp = 0;
-//	tmp |= RESET_CS | RESET_WR | SET_RD;
-//	tmp |= command ? SET_AO : RESET_AO;
-//
-//	DIRECTIVE_GPIO->BSRR |= SET_AO;
-//	DIRECTIVE_GPIO->BSRR = tmp;
-//	delay_us(2);
-//
-//	tmp = 0;
-//	tmp |= pData[0];
-//	tmp |= (~pData[0]) << 16;
-//	DATA_GPIO->BSRR = tmp;
-//
-//	delay_us(2);
-//	DIRECTIVE_GPIO->BSRR = SET_CS;
-//	delay_us(2);
-//
-//}
-
-void ReadFromUSBController() {
-	SetUsbInput();
-	delay_us(1);
-	DIRECTIVE_GPIO->BSRR = RESET_CS | SET_WR | RESET_AO | RESET_RD;
-	delay_us(1);
-	uint8_t tmp = DATA_GPIO->IDR & 0xFF;
-
-	DIRECTIVE_GPIO->BSRR = SET_CS;
+int __io_putchar(int ch)
+{
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1 , 0xffff);
+    return ch;
 }
 
 /* USER CODE END 0 */
@@ -212,21 +97,23 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM1_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start(&htim1);
 
+    reset_controller();
+    reset_device();
 	DATA_GPIO->BSRR = 0xFF;
-	uint8_t pData[1];
+//	uint8_t pData[1];
 //	pData[0] = CMD_RESET;
-	WriteUSBCommand(CMD_RESET);
-	HAL_Delay(40);
-	pData[0] = 0x06;
-	WriteUSBCommandAndData(CMD_SET_MODE, pData, 1);
-	delay_us(2);
-	pData[0] = 0x57;
-	WriteUSBCommandAndData(CMD_CHECK_EXIST, pData, 1);
-	delay_us(2);
-	ReadUSBCommand(pData, 1);
+;
+//	pData[0] = 0x06;
+//	WriteUSBCommandAndData(CMD_SET_MODE, pData, 1);
+//	delay_us(2);
+//	pData[0] = 0x57;
+//	WriteUSBCommandAndData(CMD_CHECK_EXIST, pData, 1);
+//	delay_us(2);
+//	ReadUSBCommand(pData, 1);
 //	WriteToUSBController(1, pData, 1);
 //	delay_us(2);
 //	pData[0] = 0x06;
@@ -246,9 +133,9 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-		delay_us(60000);
+		HAL_Delay(1000);
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
-		delay_us(60000);
+        HAL_Delay(1000);
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
 //		HAL_Delay(50);
 	}
@@ -341,6 +228,39 @@ static void MX_TIM1_Init(void)
   /* USER CODE BEGIN TIM1_Init 2 */
 
   /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 

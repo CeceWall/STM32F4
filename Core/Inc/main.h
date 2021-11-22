@@ -32,6 +32,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "usb_controller.h"
 #include "stopwatch.h"
 /* USER CODE END Includes */
 
